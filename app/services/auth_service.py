@@ -1,8 +1,7 @@
 from datetime import datetime
 from fastapi import HTTPException
 from app.db.mongodb import get_database
-from app.models.user import UserCreate, UserLogin, UserInDB, UserResponse
-from app.models.goal import UserGoal
+from app.models.user import UserCreate, UserLogin, UserResponse
 from app.core.security import get_password_hash, verify_password, create_access_token
 
 async def register_user(user_data: UserCreate) -> dict:
