@@ -1,14 +1,13 @@
 from datetime import datetime
 from fastapi import HTTPException
-from app.db.mongodb import get_database
+from app.db.mongodb import db_client
 from app.models.user import UserCreate, UserLogin, UserResponse
 from app.core.security import get_password_hash, verify_password, create_access_token
 
 async def register_user(user_data: UserCreate) -> dict:
-    db = get_database()
     
     # Check if email exists
-    existing_user = await db.users.find_one({"email": user_data.email.lower()})
+    existing_user = await db_client.db.users.find_one({"email": user_data.email.lower()})
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
         
@@ -25,7 +24,7 @@ async def register_user(user_data: UserCreate) -> dict:
         "updatedAt": datetime.utcnow()
     }
     
-    result = await db.users.insert_one(user_doc)
+    result = await db_client.db.users.insert_one(user_doc)
     user_doc["_id"] = result.inserted_id
     
     # Create default user goal
@@ -38,7 +37,7 @@ async def register_user(user_data: UserCreate) -> dict:
         "createdAt": datetime.utcnow(),
         "updatedAt": datetime.utcnow()
     }
-    await db.user_goals.insert_one(goal_doc)
+    await db_client.db.user_goals.insert_one(goal_doc)
     
     # Generate token
     access_token = create_access_token(subject=str(result.inserted_id))
@@ -52,9 +51,8 @@ async def register_user(user_data: UserCreate) -> dict:
     }
 
 async def authenticate_user(login_data: UserLogin) -> dict:
-    db = get_database()
     
-    user_doc = await db.users.find_one({"email": login_data.email.lower(), "isDeleted": False})
+    user_doc = await db_client.db.users.find_one({"email": login_data.email.lower(), "isDeleted": False})
     if not user_doc:
         raise HTTPException(status_code=401, detail="Invalid email or password")
         
