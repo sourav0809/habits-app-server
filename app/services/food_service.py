@@ -5,8 +5,9 @@ from typing import List, Optional
 from app.db.mongodb import db_client
 from app.models.food import UserFood, FoodConsumption
 from app.services.activity_service import get_or_create_activity
+from app.validation.food import CreateFoodRequest, LogFoodRequest, UpdateFoodLogRequest
 
-async def create_user_food(user_id: str, name: str, calories_per_gram: float, default_quantity: float = 100.0) -> UserFood:
+async def create_user_food(user_id: str, request: CreateFoodRequest) -> UserFood:
     """Create a predefined food item in the user's catalog."""
     try:
         obj_id = ObjectId(user_id)
@@ -15,17 +16,17 @@ async def create_user_food(user_id: str, name: str, calories_per_gram: float, de
 
     new_food = {
         "userId": obj_id,
-        "name": name,
-        "caloriesPerGram": calories_per_gram,
-        "defaultQuantity": default_quantity,
+        "name": request.name,
+        "caloriesPerGram": request.calories_per_gram,
+        "defaultQuantity": request.default_quantity,
         "isDeleted": False,
         "createdAt": datetime.now(),
         "updatedAt": datetime.now()
     }
     
     result = await db_client.db.user_foods.insert_one(new_food)
-    created_food = await db_client.db.user_foods.find_one({"_id": result.inserted_id})
-    return UserFood(**created_food)
+    new_food["_id"] = result.inserted_id
+    return UserFood(**new_food)
 
 async def get_user_foods(user_id: str) -> List[UserFood]:
     """Retrieve all predefined food items for a user."""
@@ -38,23 +39,22 @@ async def get_user_foods(user_id: str) -> List[UserFood]:
     foods = await cursor.to_list(length=100)
     return [UserFood(**f) for f in foods]
 
-async def log_food_consumption(user_id: str, food_id: str, quantity: float, log_time: Optional[datetime] = None) -> FoodConsumption:
+async def log_food_consumption(user_id: str, request: LogFoodRequest) -> FoodConsumption:
     """Log food consumption and update daily summary."""
     try:
         obj_id = ObjectId(user_id)
-        f_id = ObjectId(food_id)
+        f_id = ObjectId(request.food_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid ID format")
 
-    if log_time is None:
-        log_time = datetime.now()
+    log_time = request.log_time or datetime.now()
 
     # Get food details to calculate total calories
     food_item = await db_client.db.user_foods.find_one({"_id": f_id, "isDeleted": False})
     if not food_item:
         raise HTTPException(status_code=404, detail="Food item not found")
         
-    total_calories = quantity * food_item["caloriesPerGram"]
+    total_calories = request.quantity * food_item["caloriesPerGram"]
     
     activity = await get_or_create_activity(obj_id, log_time.date())
 
@@ -63,7 +63,7 @@ async def log_food_consumption(user_id: str, food_id: str, quantity: float, log_
         "userActivityId": ObjectId(activity.id),
         "userFoodId": f_id,
         "dateAndTime": log_time,
-        "quantity": quantity,
+        "quantity": request.quantity,
         "totalCalories": total_calories,
         "isDeleted": False,
         "createdAt": datetime.now(),
@@ -81,8 +81,8 @@ async def log_food_consumption(user_id: str, food_id: str, quantity: float, log_
         }
     )
     
-    created_log = await db_client.db.food_consumptions.find_one({"_id": result.inserted_id})
-    return FoodConsumption(**created_log)
+    new_log["_id"] = result.inserted_id
+    return FoodConsumption(**new_log)
 
 async def get_food_consumptions(user_id: str, start_date: datetime, end_date: datetime) -> List[dict]:
     """Retrieve food logs between dates with food details."""
@@ -116,14 +116,14 @@ async def get_food_consumptions(user_id: str, start_date: datetime, end_date: da
     cursor = db_client.db.food_consumptions.aggregate(pipeline)
     logs = await cursor.to_list(length=100)
     
-    # Map MongoDB _id to id for consistency
     for log in logs:
         log["id"] = str(log["_id"])
         if "foodInfo" in log:
             log["foodInfo"]["id"] = str(log["foodInfo"]["_id"])
             
     return logs
-async def update_food_log(user_id: str, log_id: str, quantity: float, log_time: Optional[datetime] = None) -> FoodConsumption:
+
+async def update_food_log(user_id: str, log_id: str, request: UpdateFoodLogRequest) -> FoodConsumption:
     """Update an existing food log and adjust daily summary."""
     try:
         u_id = ObjectId(user_id)
@@ -131,31 +131,27 @@ async def update_food_log(user_id: str, log_id: str, quantity: float, log_time: 
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid ID format")
 
-    # Find the existing log
     old_log = await db_client.db.food_consumptions.find_one({"_id": l_id, "userId": u_id, "isDeleted": False})
     if not old_log:
         raise HTTPException(status_code=404, detail="Log entry not found")
 
-    # Get food details to calculate new total calories
     food_item = await db_client.db.user_foods.find_one({"_id": ObjectId(old_log["userFoodId"])})
     if not food_item:
         raise HTTPException(status_code=404, detail="Food item not found")
 
-    new_total_calories = quantity * food_item["caloriesPerGram"]
+    new_total_calories = request.quantity * food_item["caloriesPerGram"]
     calorie_diff = new_total_calories - old_log["totalCalories"]
 
-    # Update the log
     update_data = {
-        "quantity": quantity,
+        "quantity": request.quantity,
         "totalCalories": new_total_calories,
         "updatedAt": datetime.now()
     }
-    if log_time:
-        update_data["dateAndTime"] = log_time
+    if request.log_time:
+        update_data["dateAndTime"] = request.log_time
 
     await db_client.db.food_consumptions.update_one({"_id": l_id}, {"$set": update_data})
 
-    # Update activity total
     await db_client.db.activities.update_one(
         {"_id": ObjectId(old_log["userActivityId"])},
         {
@@ -179,13 +175,11 @@ async def delete_food_log(user_id: str, log_id: str) -> bool:
     if not log:
         raise HTTPException(status_code=404, detail="Log entry not found")
 
-    # Mark as deleted
     await db_client.db.food_consumptions.update_one(
         {"_id": l_id},
         {"$set": {"isDeleted": True, "updatedAt": datetime.now()}}
     )
 
-    # Subtract from activity
     await db_client.db.activities.update_one(
         {"_id": ObjectId(log["userActivityId"])},
         {

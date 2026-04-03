@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Body, Query
-from typing import List, Optional
+from fastapi import APIRouter, Depends, Query
+from typing import List
 from datetime import datetime
 from app.api.deps import get_current_user
 from app.models.user import UserResponse
 from app.models.water import WaterConsumption
 from app.services import water_service
+from app.validation.water import LogWaterRequest, UpdateWaterLogRequest
 
 router = APIRouter()
 
@@ -19,21 +20,20 @@ async def get_water_logs(
 
 @router.post("/logs", response_model=WaterConsumption)
 async def log_water(
-    amount_ml: float = Body(..., embed=True),
-    intake_time: Optional[datetime] = Body(None, embed=True),
+    request: LogWaterRequest,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Log water intake."""
-    return await water_service.log_water(str(current_user.id), amount_ml, intake_time)
+    return await water_service.log_water(str(current_user.id), request)
+
 @router.patch("/logs/{log_id}", response_model=WaterConsumption)
 async def update_water_log(
     log_id: str,
-    amount_ml: float = Body(..., embed=True),
-    intake_time: Optional[datetime] = Body(None, embed=True),
+    request: UpdateWaterLogRequest,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Update a water entry."""
-    return await water_service.update_water_log(str(current_user.id), log_id, amount_ml, intake_time)
+    return await water_service.update_water_log(str(current_user.id), log_id, request)
 
 @router.delete("/logs/{log_id}")
 async def delete_water_log(

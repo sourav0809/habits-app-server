@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Body, Query
-from typing import List, Optional
+from fastapi import APIRouter, Depends, Query, Body
+from typing import List
 from datetime import datetime
 from app.api.deps import get_current_user
 from app.models.user import UserResponse
 from app.models.food import UserFood, FoodConsumption
 from app.services import food_service
+from app.validation.food import CreateFoodRequest, LogFoodRequest, UpdateFoodLogRequest
 
 router = APIRouter()
 
@@ -15,18 +16,11 @@ async def get_food_catalog(current_user: UserResponse = Depends(get_current_user
 
 @router.post("/catalog", response_model=UserFood)
 async def create_food_item(
-    name: str = Body(...),
-    calories_per_gram: float = Body(...),
-    default_quantity: float = Body(100.0),
+    request: CreateFoodRequest,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Add a new food item to the user's predefined catalog."""
-    return await food_service.create_user_food(
-        str(current_user.id), 
-        name, 
-        calories_per_gram, 
-        default_quantity
-    )
+    return await food_service.create_user_food(str(current_user.id), request)
 
 @router.get("/logs", response_model=List[FoodConsumption])
 async def get_food_logs(
@@ -39,27 +33,20 @@ async def get_food_logs(
 
 @router.post("/logs", response_model=FoodConsumption)
 async def log_food_consumption(
-    food_id: str = Body(...),
-    quantity: float = Body(...),
-    log_time: Optional[datetime] = Body(None),
+    request: LogFoodRequest,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Log food intake from the catalog."""
-    return await food_service.log_food_consumption(
-        str(current_user.id), 
-        food_id, 
-        quantity, 
-        log_time
-    )
+    return await food_service.log_food_consumption(str(current_user.id), request)
+
 @router.patch("/logs/{log_id}", response_model=FoodConsumption)
 async def update_food_log(
     log_id: str,
-    quantity: float = Body(...),
-    log_time: Optional[datetime] = Body(None),
+    request: UpdateFoodLogRequest,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Update a food entry."""
-    return await food_service.update_food_log(str(current_user.id), log_id, quantity, log_time)
+    return await food_service.update_food_log(str(current_user.id), log_id, request)
 
 @router.delete("/logs/{log_id}")
 async def delete_food_log(

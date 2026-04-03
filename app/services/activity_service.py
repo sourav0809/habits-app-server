@@ -24,6 +24,7 @@ async def get_or_create_activity(user_id: ObjectId, activity_date: date) -> User
             "updatedAt": datetime.now()
         }
         result = await db_client.db.activities.insert_one(new_activity)
-        activity = await db_client.db.activities.find_one({"_id": result.inserted_id})
+        new_activity["_id"] = result.inserted_id
+        activity = new_activity
         
     return UserActivity(**activity)
