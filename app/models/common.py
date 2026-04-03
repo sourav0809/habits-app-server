@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 from pydantic import BaseModel, Field, GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 from bson import ObjectId
@@ -9,17 +9,17 @@ class PyObjectId(str):
     def __get_pydantic_core_schema__(
         cls, _source_type: Any, _handler: GetCoreSchemaHandler
     ) -> CoreSchema:
-        return core_schema.no_info_after_validator_function(
+        return core_schema.no_info_before_validator_function(
             cls.validate,
             core_schema.str_schema(),
         )
 
     @classmethod
-    def validate(cls, v: Any) -> ObjectId:
+    def validate(cls, v: Any) -> str:
         if isinstance(v, ObjectId):
-            return v
+            return str(v)
         if isinstance(v, str) and ObjectId.is_valid(v):
-            return ObjectId(v)
+            return v
         raise ValueError("Invalid ObjectId")
 
 class MongoBaseModel(BaseModel):
