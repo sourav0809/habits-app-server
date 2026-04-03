@@ -25,3 +25,21 @@ async def log_water(
 ):
     """Log water intake."""
     return await water_service.log_water(str(current_user.id), amount_ml, intake_time)
+@router.patch("/logs/{log_id}", response_model=WaterConsumption)
+async def update_water_log(
+    log_id: str,
+    amount_ml: float = Body(..., embed=True),
+    intake_time: Optional[datetime] = Body(None, embed=True),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Update a water entry."""
+    return await water_service.update_water_log(str(current_user.id), log_id, amount_ml, intake_time)
+
+@router.delete("/logs/{log_id}")
+async def delete_water_log(
+    log_id: str,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Delete a water entry."""
+    await water_service.delete_water_log(str(current_user.id), log_id)
+    return {"detail": "Log deleted successfully"}

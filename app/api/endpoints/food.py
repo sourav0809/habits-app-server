@@ -51,3 +51,21 @@ async def log_food_consumption(
         quantity, 
         log_time
     )
+@router.patch("/logs/{log_id}", response_model=FoodConsumption)
+async def update_food_log(
+    log_id: str,
+    quantity: float = Body(...),
+    log_time: Optional[datetime] = Body(None),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Update a food entry."""
+    return await food_service.update_food_log(str(current_user.id), log_id, quantity, log_time)
+
+@router.delete("/logs/{log_id}")
+async def delete_food_log(
+    log_id: str,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Delete a food entry."""
+    await food_service.delete_food_log(str(current_user.id), log_id)
+    return {"detail": "Log deleted successfully"}

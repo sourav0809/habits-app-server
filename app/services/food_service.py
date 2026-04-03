@@ -123,3 +123,75 @@ async def get_food_consumptions(user_id: str, start_date: datetime, end_date: da
             log["foodInfo"]["id"] = str(log["foodInfo"]["_id"])
             
     return logs
+async def update_food_log(user_id: str, log_id: str, quantity: float, log_time: Optional[datetime] = None) -> FoodConsumption:
+    """Update an existing food log and adjust daily summary."""
+    try:
+        u_id = ObjectId(user_id)
+        l_id = ObjectId(log_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    # Find the existing log
+    old_log = await db_client.db.food_consumptions.find_one({"_id": l_id, "userId": u_id, "isDeleted": False})
+    if not old_log:
+        raise HTTPException(status_code=404, detail="Log entry not found")
+
+    # Get food details to calculate new total calories
+    food_item = await db_client.db.user_foods.find_one({"_id": ObjectId(old_log["userFoodId"])})
+    if not food_item:
+        raise HTTPException(status_code=404, detail="Food item not found")
+
+    new_total_calories = quantity * food_item["caloriesPerGram"]
+    calorie_diff = new_total_calories - old_log["totalCalories"]
+
+    # Update the log
+    update_data = {
+        "quantity": quantity,
+        "totalCalories": new_total_calories,
+        "updatedAt": datetime.now()
+    }
+    if log_time:
+        update_data["dateAndTime"] = log_time
+
+    await db_client.db.food_consumptions.update_one({"_id": l_id}, {"$set": update_data})
+
+    # Update activity total
+    await db_client.db.activities.update_one(
+        {"_id": ObjectId(old_log["userActivityId"])},
+        {
+            "$inc": {"totalCalories": calorie_diff},
+            "$set": {"updatedAt": datetime.now()}
+        }
+    )
+
+    updated_log = await db_client.db.food_consumptions.find_one({"_id": l_id})
+    return FoodConsumption(**updated_log)
+
+async def delete_food_log(user_id: str, log_id: str) -> bool:
+    """Soft delete a food log and adjust daily summary."""
+    try:
+        u_id = ObjectId(user_id)
+        l_id = ObjectId(log_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    log = await db_client.db.food_consumptions.find_one({"_id": l_id, "userId": u_id, "isDeleted": False})
+    if not log:
+        raise HTTPException(status_code=404, detail="Log entry not found")
+
+    # Mark as deleted
+    await db_client.db.food_consumptions.update_one(
+        {"_id": l_id},
+        {"$set": {"isDeleted": True, "updatedAt": datetime.now()}}
+    )
+
+    # Subtract from activity
+    await db_client.db.activities.update_one(
+        {"_id": ObjectId(log["userActivityId"])},
+        {
+            "$inc": {"totalCalories": -log["totalCalories"]},
+            "$set": {"updatedAt": datetime.now()}
+        }
+    )
+
+    return True
